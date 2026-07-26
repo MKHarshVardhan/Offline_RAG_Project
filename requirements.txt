@@ -1,0 +1,13 @@
+pymupdf
+python-docx
+pytesseract
+pillow
+faster-whisper
+langchain-text-splitters
+sentence-transformers
+chromadb
+ollama
+streamlit
+streamlit-mic-recorder
+numpy
+python-dotenv
