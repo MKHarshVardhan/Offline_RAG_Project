@@ -25,6 +25,10 @@ CHROMA_DB_PATH: str = "./data/chroma_db"
 # --- Retrieval ---
 TOP_K: int = 5
 
+# --- Ingestion limits ---
+MAX_FILE_SIZE_MB: int = 50          # files larger than this are rejected
+MIN_TRANSCRIPT_WORDS: int = 3       # audio transcripts shorter than this are treated as silence
+
 # --- OCR ---
 PYTESSERACT_PATH: str = os.getenv(
     "PYTESSERACT_PATH", r"C:\Program Files\Tesseract-OCR\tesseract.exe"

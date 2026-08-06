@@ -12,6 +12,9 @@ from typing import Dict
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
 
+from config import PYTESSERACT_PATH
+pytesseract.pytesseract.tesseract_cmd = PYTESSERACT_PATH
+
 
 def extract_image(image_path: str) -> Dict:
     """
