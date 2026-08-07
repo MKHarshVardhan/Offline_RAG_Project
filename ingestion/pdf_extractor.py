@@ -57,7 +57,7 @@ class PDFExtractor:
         try:
             document = fitz.open(pdf_path)
         except fitz.FileError as e:
-            raise fitz.FileError(f"Invalid PDF file: {pdf_path}") from e
+            raise fitz.FileError(f"Invalid PDF file: {pdf_path}: {e}") from e
 
         results = []
         filename = pdf_path.name
@@ -150,43 +150,6 @@ class PDFExtractor:
             return True
 
         return False
-
-    def extract_with_page_info(
-        self, pdf_path: str, include_metadata: bool = False
-    ) -> List[Dict]:
-        """
-        Extract text with optional additional metadata.
-
-        Args:
-            pdf_path: Path to the PDF file.
-            include_metadata: If True, includes page metadata like size and rotation.
-
-        Returns:
-            List of dictionaries with extracted text and metadata.
-        """
-        results = self.extract_text_from_pdf(pdf_path)
-
-        if include_metadata:
-            pdf_path = Path(pdf_path)
-            try:
-                document = fitz.open(pdf_path)
-
-                for i, result in enumerate(results):
-                    page = document[i]
-                    page_rect = page.get_rect()
-
-                    result["metadata"] = {
-                        "width": page_rect.width,
-                        "height": page_rect.height,
-                        "rotation": page.rotation,
-                    }
-
-                document.close()
-            except Exception as e:
-                print(f"Warning: Could not extract metadata: {e}")
-
-        return results
-
 
 def extract_pdf(pdf_path: str) -> List[Dict]:
     """

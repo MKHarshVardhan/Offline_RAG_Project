@@ -209,7 +209,7 @@ def ingest_file(file_path: str) -> list[dict]:
         })
 
     # ---------------------------------------------------------------- Audio
-    elif ext in {".wav", ".mp3", ".m4a"}:
+    elif ext in {".wav", ".mp3"}:
         raw = extract_audio(file_path)
         word_count = len(raw["text"].split())
         if word_count < MIN_TRANSCRIPT_WORDS:
@@ -241,7 +241,7 @@ def ingest_file(file_path: str) -> list[dict]:
     else:
         raise ValueError(
             f"Unsupported file extension '{ext}'. "
-            "Supported: .pdf, .docx, .png, .jpg, .jpeg, .wav, .mp3, .m4a"
+            "Supported: .pdf, .docx, .png, .jpg, .jpeg, .wav, .mp3"
         )
 
     # Drop entries where cleaning left nothing

@@ -124,33 +124,6 @@ class DOCXExtractor:
         # Join rows with newlines
         return "\n".join(rows_text)
 
-    def extract_with_details(self, docx_path: str) -> List[Dict]:
-        """
-        Extract text with additional document details.
-
-        Args:
-            docx_path: Path to the DOCX file.
-
-        Returns:
-            List of dictionaries with extracted text and metadata.
-        """
-        docx_path = Path(docx_path)
-
-        try:
-            document = Document(docx_path)
-        except Exception as e:
-            raise Exception(f"Invalid or corrupted DOCX file: {docx_path}") from e
-
-        results = self.extract_text_from_docx(docx_path)
-
-        # Add document-level metadata
-        for result in results:
-            result["document_title"] = document.core_properties.title or "Untitled"
-            result["document_author"] = document.core_properties.author or "Unknown"
-
-        return results
-
-
 def extract_docx(docx_path: str) -> List[Dict]:
     """
     Convenience function to extract text from a DOCX file.

@@ -11,7 +11,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from config import CHUNK_SIZE, CHUNK_OVERLAP
 
-
 def chunk_text(text: str, metadata: dict) -> list[dict]:
     """
     Split `text` into overlapping chunks (measured in words).

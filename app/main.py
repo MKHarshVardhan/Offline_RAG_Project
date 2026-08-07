@@ -8,9 +8,11 @@ Run with: streamlit run app/main.py
 import sys
 import tempfile
 import os
+import shutil
 from pathlib import Path
 
 import wave
+import numpy as np
 
 import httpx
 import ollama
@@ -19,7 +21,7 @@ from streamlit_mic_recorder import mic_recorder
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config import OLLAMA_BASE_URL, OLLAMA_MODEL
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, SUMMARY_TOP_K
 from ingestion.ingest import ingest_file, validate_file
 from ingestion.chunker import chunk_text
 from ingestion.audio_extractor import extract_audio
@@ -36,6 +38,12 @@ _EXT_LABELS = {
     "pdf": "PDF", "docx": "Word", "png": "Image",
     "jpg": "Image", "jpeg": "Image", "wav": "Audio", "mp3": "Audio",
 }
+
+_SUMMARY_KEYWORDS = {"summarize", "summary", "summarise", "overview", "outline"}
+
+def _is_summary_query(query: str) -> bool:
+    return bool(_SUMMARY_KEYWORDS & set(query.lower().split()))
+
 
 # ---------------------------------------------------------------------------
 # Cached singletons — created once per Streamlit session
@@ -61,12 +69,12 @@ def _list_ollama_models() -> list[str]:
 
 def _init_state() -> None:
     defaults = {
-        "ingested_files":      [],    # list of filenames already processed
         "chat_history":        [],    # list of {query, answer, sources}
         "confirm_reset":       False, # two-step reset flag
         "active_model":        OLLAMA_MODEL,
         "pending_voice_query": "",    # transcribed text awaiting confirmation
         "last_audio_bytes":    None,  # dedupe: skip re-transcribing same clip
+        "scoped_source":       None,  # currently selected document scope
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -139,8 +147,10 @@ def _ingest_uploaded_file(uploaded_file, store: VectorStore) -> tuple[int, str, 
         return added, "", ""
 
     except ValueError as exc:
+        print(f"[ingest] ValueError: {exc}")
         return 0, str(exc), ""
     except Exception as exc:
+        print(f"[ingest] {type(exc).__name__}: {exc}")
         return 0, (
             f"Unexpected error while processing **{uploaded_file.name}**: {exc}. "
             "Try re-uploading the file or check the terminal for details."
@@ -157,11 +167,20 @@ def _render_sidebar(store: VectorStore) -> None:
     with st.sidebar:
         st.title("⚙️ Knowledge Base")
 
+        # --- ffmpeg check ---------------------------------------------------
+        if shutil.which("ffmpeg") is None:
+            st.warning(
+                "⚠️ **ffmpeg not found on PATH.** Voice recording may fail to decode.\n\n"
+                "**Fix:** Install ffmpeg and ensure it is on your system PATH, "
+                "then restart the app."
+            )
+            st.divider()
+
         # --- Stats ----------------------------------------------------------
         chunk_count = store.count()
-        file_count  = len(st.session_state.ingested_files)
+        sources     = store.list_ingested_sources()
         st.metric("Chunks stored", chunk_count)
-        st.metric("Files ingested", file_count)
+        st.metric("Files ingested", len(sources))
         st.divider()
 
         # --- Model selector -------------------------------------------------
@@ -181,6 +200,21 @@ def _render_sidebar(store: VectorStore) -> None:
             st.caption(f"Configured model: `{OLLAMA_MODEL}`")
         st.divider()
 
+        # --- Ingested files -------------------------------------------------
+        st.subheader("📋 Ingested Files")
+        if not sources:
+            st.info("No documents ingested yet.", icon="ℹ️")
+        else:
+            for entry in sources:
+                col_f, col_r = st.columns([5, 1])
+                ext   = Path(entry["source"]).suffix.lstrip(".")
+                label = _EXT_LABELS.get(ext, ext.upper())
+                col_f.caption(f"`{entry['source']}` · {label} · {entry['chunk_count']} chunks")
+                if col_r.button("🗑", key=f"rm_{entry['source']}", help=f"Remove {entry['source']}"):
+                    store.remove_source(entry["source"])
+                    st.rerun()
+        st.divider()
+
         # --- Reset KB -------------------------------------------------------
         st.subheader("🗑️ Reset Knowledge Base")
         if not st.session_state.confirm_reset:
@@ -197,9 +231,8 @@ def _render_sidebar(store: VectorStore) -> None:
                 if st.button("✅ Confirm", type="primary", use_container_width=True):
                     with st.spinner("Clearing knowledge base…"):
                         store.reset()
-                    st.session_state.ingested_files = []
-                    st.session_state.chat_history   = []
-                    st.session_state.confirm_reset  = False
+                    st.session_state.chat_history = []
+                    st.session_state.confirm_reset = False
                     st.success("Knowledge base cleared. Upload new documents to get started.")
                     st.rerun()
             with col2:
@@ -223,10 +256,8 @@ def _render_upload_panel(store: VectorStore) -> None:
     )
 
     if uploaded_files:
-        new_files = [
-            f for f in uploaded_files
-            if f.name not in st.session_state.ingested_files
-        ]
+        ingested_sources = {s["source"] for s in store.list_ingested_sources()}
+        new_files = [f for f in uploaded_files if f.name not in ingested_sources]
         for uf in new_files:
             added, err, warn = _ingest_uploaded_file(uf, store)
             if err:
@@ -236,35 +267,13 @@ def _render_upload_panel(store: VectorStore) -> None:
                 )
             elif warn:
                 st.warning(f"⚠️ {warn}", icon="⚠️")
-                if uf.name not in st.session_state.ingested_files:
-                    st.session_state.ingested_files.append(uf.name)
-            else:
-                st.session_state.ingested_files.append(uf.name)
-
-    # --- Ingested file list or empty state ----------------------------------
-    st.divider()
-    if st.session_state.ingested_files:
-        with st.expander(
-            f"📋 Ingested files ({len(st.session_state.ingested_files)})", expanded=False
-        ):
-            for fname in st.session_state.ingested_files:
-                ext   = Path(fname).suffix.lstrip(".")
-                label = _EXT_LABELS.get(ext, ext.upper())
-                st.markdown(f"- `{fname}` &nbsp; <sub>{label}</sub>", unsafe_allow_html=True)
-    else:
-        st.info(
-            "📭 **No documents uploaded yet.**\n\n"
-            "Upload a PDF, Word document, image, or audio file above to build "
-            "your knowledge base.",
-            icon="ℹ️",
-        )
 
 
 # ---------------------------------------------------------------------------
 # Shared query execution — single path for typed + voice
 # ---------------------------------------------------------------------------
 
-def _submit_query(query: str, store: VectorStore) -> None:
+def _submit_query(query: str, store: VectorStore, source: str | None = None) -> None:
     """Search the KB and generate an answer; append result to chat history."""
     if store.count() == 0:
         st.session_state.chat_history.append({
@@ -277,9 +286,12 @@ def _submit_query(query: str, store: VectorStore) -> None:
         })
         return
 
+    top_k = SUMMARY_TOP_K if (source and _is_summary_query(query)) else None
+    scope_label = f" in **{source}**" if source else ""
+
     # Stage 1 — retrieval
-    with st.spinner("🔎 Searching knowledge base…"):
-        chunks = store.search(query)
+    with st.spinner(f"🔎 Searching knowledge base{scope_label}…"):
+        chunks = store.search(query, top_k=top_k, source=source)
 
     # Stage 2 — generation
     with st.spinner(f"💬 Generating answer with **{st.session_state.active_model}**…"):
@@ -310,16 +322,31 @@ def _transcribe_recording(audio: dict) -> str:
         tmp_path = tmp.name
 
     try:
-        with wave.open(tmp_path, "wb") as wf:
-            wf.setnchannels(audio.get("channels", 1))
-            wf.setsampwidth(audio.get("sample_width", 2))
-            wf.setframerate(audio.get("sample_rate", 16000))
-            wf.writeframes(audio["bytes"])
+        with open(tmp_path, "wb") as f:
+            f.write(audio["bytes"])
+
+        # --- Validate the written WAV ---
+        with wave.open(tmp_path, "rb") as wf:
+            n_frames     = wf.getnframes()
+            framerate    = wf.getframerate()
+            sample_width = wf.getsampwidth()
+            raw          = wf.readframes(n_frames)
+
+        duration = n_frames / framerate if framerate else 0
+        if duration < 0.1 or len(raw) < 2:
+            raise ValueError("Recording appears to be empty or too short.")
+
+        dtype = {1: np.int8, 2: np.int16, 4: np.int32}.get(sample_width, np.int16)
+        samples = np.frombuffer(raw, dtype=dtype).astype(np.float64)
+        rms = np.sqrt(np.mean(samples ** 2)) if samples.size else 0
+        if rms < 1.0:
+            raise ValueError("Recording appears to be silent or corrupted.")
 
         result = extract_audio(tmp_path)
         return result["text"].strip()
 
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        print(f"[transcribe] FileNotFoundError: {exc}")
         st.error(
             "❌ **Transcription failed:** the recorded audio could not be saved. "
             "Try recording again.",
@@ -327,6 +354,7 @@ def _transcribe_recording(audio: dict) -> str:
         )
         return ""
     except ValueError as exc:
+        print(f"[transcribe] ValueError: {exc}")
         st.error(
             f"❌ **Transcription failed:** {exc} "
             "Try speaking more clearly or moving to a quieter environment.",
@@ -334,6 +362,7 @@ def _transcribe_recording(audio: dict) -> str:
         )
         return ""
     except Exception as exc:
+        print(f"[transcribe] {type(exc).__name__}: {exc}")
         st.error(
             f"❌ **Transcription failed:** {exc} "
             "Check that the Whisper model has been downloaded (`./models/whisper`).",
@@ -341,6 +370,9 @@ def _transcribe_recording(audio: dict) -> str:
         )
         return ""
     finally:
+        # DEBUG: copy recording for manual inspection before deleting
+        debug_path = Path(__file__).resolve().parents[1] / "debug_last_recording.wav"
+        shutil.copy2(tmp_path, debug_path)
         os.unlink(tmp_path)
 
 
@@ -350,6 +382,16 @@ def _transcribe_recording(audio: dict) -> str:
 
 def _render_ask_panel(store: VectorStore) -> None:
     st.header("💬 Ask a Question")
+
+    # ── Scope selector (outside form so it updates immediately) ──────────
+    sources = store.list_ingested_sources()
+    source_options = ["All documents"] + [s["source"] for s in sources]
+    selected = st.selectbox(
+        "🔍 Scope search to document:",
+        source_options,
+        key="scope_selectbox",
+    )
+    st.session_state.scoped_source = None if selected == "All documents" else selected
 
     # ── Typed input ────────────────────────────────────────────────────────
     with st.form("ask_form", clear_on_submit=True):
@@ -367,7 +409,7 @@ def _render_ask_panel(store: VectorStore) -> None:
                 icon="⚠️",
             )
         else:
-            _submit_query(query.strip(), store)
+            _submit_query(query.strip(), store, source=st.session_state.scoped_source)
 
     # ── Voice input ────────────────────────────────────────────────────────
     st.markdown("**Or record a voice question:**")
@@ -376,6 +418,7 @@ def _render_ask_panel(store: VectorStore) -> None:
         stop_prompt="⏹️ Stop recording",
         just_once=True,
         use_container_width=True,
+        format="wav",
         key="mic",
     )
 
@@ -407,7 +450,7 @@ def _render_ask_panel(store: VectorStore) -> None:
             if st.button("Submit", type="primary", use_container_width=True, key="voice_submit"):
                 st.session_state.pending_voice_query = ""
                 if edited.strip():
-                    _submit_query(edited.strip(), store)
+                    _submit_query(edited.strip(), store, source=st.session_state.scoped_source)
                 else:
                     st.warning(
                         "⚠️ The transcribed question is empty. "

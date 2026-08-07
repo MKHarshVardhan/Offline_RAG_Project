@@ -7,7 +7,6 @@ embeddings. Chunking is handled upstream; this module stores one chunk at a time
 
 import hashlib
 import sys
-import uuid
 from pathlib import Path
 from typing import Dict, List
 
@@ -27,22 +26,6 @@ class VectorStore:
         self._embedder = SentenceTransformer(EMBEDDING_MODEL)
         self._client = chromadb.PersistentClient(path=CHROMA_DB_PATH)
         self._collection = self._client.get_or_create_collection(COLLECTION_NAME)
-
-    def add_document(self, text: str, metadata: Dict) -> None:
-        """
-        Embed and store a single text chunk with its metadata.
-
-        Args:
-            text:     The text chunk to embed and store.
-            metadata: Arbitrary key-value metadata (e.g. source, page_number).
-        """
-        embedding = self._embedder.encode(text).tolist()
-        self._collection.add(
-            ids=[str(uuid.uuid4())],
-            embeddings=[embedding],
-            documents=[text],
-            metadatas=[metadata],
-        )
 
     def store_chunks(self, chunks: List[Dict]) -> int:
         """
@@ -172,6 +155,22 @@ class VectorStore:
     def count(self) -> int:
         """Return the total number of chunks currently stored in the collection."""
         return self._collection.count()
+
+    def list_ingested_sources(self) -> list[dict]:
+        """Return unique sources from ChromaDB as [{source, file_type, chunk_count}]."""
+        result = self._collection.get(include=["metadatas"])
+        counts: dict[tuple, int] = {}
+        for meta in result["metadatas"]:
+            key = (meta.get("source", ""), meta.get("file_type", ""))
+            counts[key] = counts.get(key, 0) + 1
+        return [
+            {"source": src, "file_type": ft, "chunk_count": n}
+            for (src, ft), n in sorted(counts.items())
+        ]
+
+    def remove_source(self, source: str) -> None:
+        """Delete all chunks whose metadata 'source' matches the given filename."""
+        self._collection.delete(where={"source": {"$eq": source}})
 
 
 if __name__ == "__main__":
