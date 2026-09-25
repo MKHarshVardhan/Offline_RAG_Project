@@ -1,0 +1,21 @@
+query_id,query,ground_truth_doc,query_type,notes
+Q1,What does GreenLeaf Organics say about reducing its carbon footprint?,D1_GreenLeaf_Sustainability_Report.pdf,keyword-overlap,shares words with source text
+Q2,Which company's packaging facility runs on solar power?,D1_GreenLeaf_Sustainability_Report.pdf,semantic,"doc says 'solar-powered equipment', query paraphrases as 'solar power'"
+Q3,How much did water usage drop after the irrigation upgrade?,D1_GreenLeaf_Sustainability_Report.pdf,keyword-overlap,
+Q4,How often do delivery vehicles need a full mechanical check?,D2_Northwind_Fleet_Maintenance_Policy.pdf,keyword-overlap,
+Q5,What tire tread depth means a tire has to be swapped out?,D2_Northwind_Fleet_Maintenance_Policy.pdf,semantic,'swapped out' vs doc's 'replaced'
+Q6,What happens if a driver spots a problem during the walkaround check?,D2_Northwind_Fleet_Maintenance_Policy.pdf,keyword-overlap,
+Q7,How long does the clinic keep a patient's medical records?,D3_Aurora_Health_Privacy_Guidelines.pdf,keyword-overlap,
+Q8,Can the clinic share my health information with my insurance company without asking me first?,D3_Aurora_Health_Privacy_Guidelines.pdf,semantic,paraphrase of 'consent' and 'third-party'
+Q9,Who is allowed to look at a patient's full medical history in the system?,D3_Aurora_Health_Privacy_Guidelines.pdf,keyword-overlap,
+Q10,Who is the new inventory system being built for?,D4_Project_Phoenix_SRS.docx,semantic,'intended users' vs 'being built for'
+Q11,How many users does the warehouse software need to support at once?,D4_Project_Phoenix_SRS.docx,keyword-overlap,
+Q12,Does the system keep a record of who changed stock counts?,D4_Project_Phoenix_SRS.docx,semantic,'audit log' vs 'keep a record'
+Q13,How many total credit hours does the data science degree need?,D5_Riverside_DataScience_Catalog.docx,keyword-overlap,
+Q14,What math or programming classes do I need before the machine learning courses?,D5_Riverside_DataScience_Catalog.docx,keyword-overlap,
+Q15,What should I do if I don't recognize a charge on my account?,D6_Meridian_Bank_Fraud_Alert.png,keyword-overlap,requires OCR
+Q16,Would the bank ever call me and ask for my full password?,D6_Meridian_Bank_Fraud_Alert.png,semantic,requires OCR
+Q17,How tall do you have to be to ride the tower drop ride?,D7_CedarPoint_Safety_Rules.png,keyword-overlap,requires OCR
+Q18,Can I bring my phone on the fast rides without it being secured?,D7_CedarPoint_Safety_Rules.png,semantic,requires OCR
+Q19,Is there any file that is related to Amazon?,D8_Amazon_Rainforest_Briefing.wav,keyword-overlap,same query already used as the demo in the paper; requires speech transcription
+Q20,How much has illegal logging dropped in the areas being monitored?,D8_Amazon_Rainforest_Briefing.wav,semantic,'illegal logging drop' vs doc's 'reduction in illegal logging activity'; requires speech transcription
